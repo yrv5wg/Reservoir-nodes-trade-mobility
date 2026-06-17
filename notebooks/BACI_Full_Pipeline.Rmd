@@ -1,0 +1,470 @@
+---
+title: "BACI Trade Network Analysis — Full Pipeline"
+subtitle: "Network-Level Indicators, Node-Level Causality, and Structural Visualization"
+author: "Dénes Kiss"
+output:
+  html_document:
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    number_sections: true
+    toc_float:
+      collapsed: no
+  html_notebook:
+    fig_caption: yes
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    number_sections: true
+    toc_float:
+      collapsed: no
+  pdf_document:
+    keep_tex: yes
+    latex_engine: lualatex
+    toc: yes
+    number_sections: true
+  word_document:
+    toc: yes
+---
+
+# Overview
+
+This script reproduces the full BACI-CEPII trade network analysis pipeline used in
+the dissertation *"Reservoir Nodes - Identifying Drivers and Structural Change in
+Trade and Mobility Networks."* It covers three stages:
+
+1. **Network-level indicators** — 27 structural metrics per product per year,
+   computed for both value-weighted (BACI) and volume-weighted (BACI volume) data.
+2. **Node-level indicators and causality** — country-level centrality measures
+   per product group, followed by pairwise Granger causality testing to identify
+   causal communities of products.
+3. **Visualization** — temporal clustering of network indicators and a world map
+   of node-level scores.
+
+Set `PATH` below to the local folder containing the BACI zip file before running.
+
+# Load necessary libraries
+
+```{r, warning=FALSE, message=FALSE}
+library(igraph)
+library(nda)
+library(readr)
+library(dplyr)
+library(brainGraph)
+library(robin)
+library(lmtest)
+library(countrycode)
+library(maps)
+library(ggplot2)
+```
+
+# Specify necessary functions
+
+```{r, warning=FALSE, message=FALSE}
+# Percolation function — simulates sequential vertex removal to trace
+# the size of the giant component (used for resilience indicators)
+percolate <- function(g, size, d) {
+  giant <- vector()
+  c <- components(g)
+  giant[1] <- max(c$csize)
+
+  names(d) <- 1:length(d)
+  d <- sort(d, decreasing = TRUE)
+  vital <- as.integer(names(d[1:size]))
+
+  for (i in 1:size) {
+    c <- components(delete_vertices(g, vital[1:i]))
+    giant[i + 1] <- max(c$csize)
+  }
+  return(giant)
+}
+
+# Replaces NA/NULL values with 0 and pads to length N
+fillzeros <- function(v, N = length(v)) {
+  v <- as.vector(v)
+  V <- as.vector(matrix(0, nrow = 1, ncol = N))
+  for (i in 1:N) {
+    if (is.na(v[i]) || is.null(v[i])) {
+      # leave as 0
+    } else {
+      V[i] <- v[i]
+    }
+  }
+  return(V)
+}
+```
+
+# Set data path
+
+```{r, warning=FALSE, message=FALSE}
+# Set your local path to the folder containing the BACI zip file
+if (.Platform$OS.type == "unix") {
+  PATH <- "~/Library/Group Containers/G69SCX94XU.duck/Library/Application Support/duck/Volumes/S/DATABASES/CEPII/"
+} else {
+  PATH <- "S:/DATABASES/CEPII/"
+}
+
+FILE <- paste(PATH, "BACI_HS92_V202201.zip", sep = "")
+LIST <- unzip(zipfile = FILE, list = TRUE)
+LIST <- LIST[grep("BACI", LIST$Name), 1]
+```
+
+---
+
+# Section 1 — Network-Level Indicators
+
+This section computes 27 network-level indicators per product per year, for both
+value-weighted and volume-weighted trade flows. Indicators correspond directly to
+Tables 3.1 and 3.2 in the dissertation.
+
+## 1.1 Value-weighted indicators (BACI)
+
+```{r, warning=FALSE, message=FALSE}
+NETWORK_COLS <- c(
+  "Product", "Year", "E_Connectivity", "V_Connectivity", "Assortativity",
+  "Mean_coreness_all", "Mean_coreness_in", "Mean_coreness_out",
+  "Clustering_global", "Clustering_local_avg", "Clustering_weighted",
+  "C_betweenness", "C_evcent", "RC_phi", "RC_Ek", "RC_Nk",
+  "Robustness_random", "Gamma", "Weak_conn_comp", "Strong_conn_comp",
+  "Biconn_comp", "Cohesion", "Res_rand", "Res_deg", "Reciprocity",
+  "E_asymm", "N_asymm"
+)
+
+compute_network_indicators <- function(DATA, weight_col) {
+  U <- unique(DATA$k)
+  N <- length(U)
+  OUTDATA <- as.data.frame(matrix(0, nrow = N, ncol = 27))
+  colnames(OUTDATA) <- NETWORK_COLS
+  rownames(OUTDATA) <- U
+
+  for (i in 1:N) {
+    g <- graph.edgelist(as.matrix(DATA[DATA$k == U[i], c(2, 3)]))
+    E(g)$weight <- as.matrix(DATA[DATA$k == U[i], weight_col])
+
+    OUTDATA[U[i], 1] <- U[i]
+    OUTDATA[U[i], 2] <- DATA[1, 1]
+    OUTDATA[U[i], 3] <- edge_connectivity(g)
+    OUTDATA[U[i], 4] <- vertex_connectivity(g)
+    OUTDATA[U[i], 5] <- assortativity.degree(g)
+    OUTDATA[U[i], 6] <- mean(coreness(g, mode = "all"), na.rm = TRUE)
+    OUTDATA[U[i], 7] <- mean(coreness(g, mode = "in"), na.rm = TRUE)
+    OUTDATA[U[i], 8] <- mean(coreness(g, mode = "out"), na.rm = TRUE)
+    OUTDATA[U[i], 9] <- transitivity(g, type = "global")
+    OUTDATA[U[i], 10] <- transitivity(g, type = "localaverage")
+    OUTDATA[U[i], 11] <- mean(transitivity(g, type = "weighted"), na.rm = TRUE)
+    OUTDATA[U[i], 12] <- centralization.betweenness(g)$centralization
+    OUTDATA[U[i], 13] <- centralization.evcent(g)$centralization
+    OUTDATA[U[i], 14] <- rich_club_coeff(g, weighted = TRUE)$phi
+    OUTDATA[U[i], 15] <- rich_club_coeff(g, weighted = TRUE)$Ek
+    OUTDATA[U[i], 16] <- rich_club_coeff(g, weighted = TRUE)$Nk
+    OUTDATA[U[i], 17] <- mean(robustness(g, type = "vertex", measure = "degree", N = 1000)$comp.pct, na.rm = TRUE)
+    OUTDATA[U[i], 18] <- ifelse(fit_power_law(degree(g))$KS.p > 0.05, fit_power_law(degree(g))$alpha, 0)
+    OUTDATA[U[i], 19] <- components(g, mode = "weak")$no
+    OUTDATA[U[i], 20] <- components(g, mode = "strong")$no
+    OUTDATA[U[i], 21] <- biconnected.components(g)$no
+    OUTDATA[U[i], 22] <- cohesion(g)
+    OUTDATA[U[i], 23] <- mean(percolate(g, vcount(g) / 2, d = sample(V(g), vcount(g) / 2)), na.rm = TRUE)
+    OUTDATA[U[i], 24] <- mean(percolate(g, vcount(g) / 2, d = degree(g)), na.rm = TRUE)
+    OUTDATA[U[i], 25] <- reciprocity(g)
+    OUTDATA[U[i], 26] <- mean(abs(as.matrix(get.adjacency(g)) - t(as.matrix(get.adjacency(g)))) /
+      (as.matrix(get.adjacency(g)) + t(as.matrix(get.adjacency(g)))), na.rm = TRUE)
+    OUTDATA[U[i], 27] <- sum(abs(rowSums(as.matrix(get.adjacency(g)), na.rm = TRUE) -
+      colSums(as.matrix(get.adjacency(g)), na.rm = TRUE))) /
+      sum(abs(rowSums(as.matrix(get.adjacency(g)), na.rm = TRUE) +
+        colSums(as.matrix(get.adjacency(g)), na.rm = TRUE)))
+  }
+  return(OUTDATA)
+}
+
+nL <- length(LIST)
+for (j in 1:nL) {
+  unzip(zipfile = FILE, files = LIST[j])
+  DATA <- read_csv(LIST[j])
+
+  # Value-weighted (column 6 = value)
+  OUTDATA_VAL <- compute_network_indicators(DATA, weight_col = 6)
+  write.table(OUTDATA_VAL, file = paste("OUT_NET_", DATA[1, 1], ".csv", sep = ""),
+              sep = ";", row.names = FALSE)
+
+  # Volume-weighted (column 5 = quantity)
+  OUTDATA_VOL <- compute_network_indicators(DATA, weight_col = 5)
+  write.table(OUTDATA_VOL, file = paste("OUT_NETVOL_", DATA[1, 1], ".csv", sep = ""),
+              sep = ";", row.names = FALSE)
+
+  unlink(LIST[j])
+}
+```
+
+## 1.2 Assemble 3D arrays (product × indicator × year)
+
+```{r, warning=FALSE, message=FALSE}
+assemble_3d_array <- function(prefix) {
+  DIR <- dir()
+  DIR <- DIR[grep(prefix, DIR)]
+  Tables <- list()
+  products <- NULL
+
+  for (i in 1:length(DIR)) {
+    tmp <- read_delim(DIR[[i]], delim = ";", escape_double = FALSE, trim_ws = TRUE)
+    if (i > 1) {
+      products <- full_join(products, tmp[1])
+    } else {
+      products <- tmp[1]
+    }
+    Tables[[i]] <- read.csv(DIR[[i]], sep = ";", row.names = 1, header = TRUE)
+  }
+
+  ar <- array(NA,
+    dim = c(nrow(products), ncol(Tables[[1]]), length(1995:2020)),
+    dimnames = list(as.matrix(products), as.matrix(colnames(Tables[[1]])), c(1995:2020))
+  )
+  for (i in 1:length(DIR)) {
+    ar[dimnames(ar)[[1]], , i] <- as.matrix(Tables[[i]][dimnames(ar)[[1]], ])
+  }
+  return(ar)
+}
+
+ar_value <- assemble_3d_array("OUT_NET_")
+ar_volume <- assemble_3d_array("OUT_NETVOL_")
+
+save(ar_value, ar_volume, file = "BACINET3D.RData")
+```
+
+## 1.3 Temporal clustering of network indicators (GNDA)
+
+```{r, warning=FALSE, message=FALSE}
+# Spearman partial-correlation-based NDA graph — value-weighted, asymmetry indicator (col 26)
+NDA_value <- ndr(na.omit(t(na.omit(ar_value[, 26, ]))), cor_method = 2, cor_type = 2)
+plot(NDA_value, cuts = 0.45)
+
+# Same for volume-weighted
+NDA_volume <- ndr(na.omit(t(na.omit(ar_volume[, 26, ]))), cor_method = 2, cor_type = 2)
+plot(NDA_volume, cuts = 0.45)
+```
+
+---
+
+# Section 2 — Node-Level Indicators and Causality
+
+This section computes country-level centrality indicators for each two-digit
+product group (HS2) and tests pairwise Granger causality between countries'
+structural trajectories, identifying causal communities (Table 3.1, Section 4.2
+of the dissertation).
+
+## 2.1 Compute node-level indicators per product group
+
+```{r, warning=FALSE, message=FALSE}
+NODE_INDICATOR_NAMES <- c("EV", "PR", "CN", "CL", "BN", "DA", "DI", "DO", "NA")
+
+nL <- length(LIST)
+for (j in 1:nL) {
+  unzip(zipfile = FILE, files = LIST[j])
+  DATA <- read_csv(LIST[j])
+  U <- unique(substr(DATA$k, 1, 2))
+  N <- length(U)
+  M <- max(max(DATA[, 2]), max(DATA[, 3]))
+
+  outdata_list <- list()
+  for (name in NODE_INDICATOR_NAMES) {
+    df <- as.data.frame(matrix(0, nrow = N, ncol = M + 2))
+    rownames(df) <- U
+    colnames(df) <- c("Product", "Year", 1:M)
+    outdata_list[[name]] <- df
+  }
+
+  for (i in 1:N) {
+    sub <- DATA[substr(DATA$k, 1, 2) == U[i], ]
+    g <- graph.edgelist(as.matrix(sub[, c(2, 3)]))
+    E(g)$weight <- abs(as.matrix(fillzeros(as.matrix(sub[, 5]))))
+
+    vals <- list(
+      EV = eigen_centrality(g, weights = E(g))$vector,
+      PR = page_rank(g, weights = E(g))$vector,
+      CN = coreness(g),
+      CL = harmonic_centrality(g, weights = E(g)),
+      BN = betweenness(g, weights = E(g)),
+      DA = degree(g, mode = "all"),
+      DI = degree(g, mode = "in"),
+      DO = degree(g, mode = "out"),
+      NA_ = strength(g, weights = E(g), mode = "out") -
+        strength(g, weights = E(g), mode = "in") / strength(g, weights = E(g), mode = "all")
+    )
+
+    for (name in NODE_INDICATOR_NAMES) {
+      key <- ifelse(name == "NA", "NA_", name)
+      outdata_list[[name]][U[i], 1] <- U[i]
+      outdata_list[[name]][U[i], 2] <- DATA[1, 1]
+      outdata_list[[name]][U[i], -(1:2)] <- fillzeros(vals[[key]], M)
+    }
+  }
+
+  for (name in NODE_INDICATOR_NAMES) {
+    write.table(outdata_list[[name]],
+      file = paste("OUT_NODE_", name, "_", DATA[1, 1], ".csv", sep = ""),
+      sep = ";", row.names = FALSE
+    )
+  }
+  unlink(LIST[j])
+}
+```
+
+## 2.2 Load country codes and assemble node-level 4D arrays
+
+```{r, warning=FALSE, message=FALSE}
+CC <- unzip(zipfile = FILE, list = TRUE)
+CC <- CC[grep("country", CC$Name), 1]
+unzip(zipfile = FILE, files = CC)
+CCodes <- read_csv(CC)
+unlink(CC)
+
+assemble_node_array <- function(indicator) {
+  DIR <- dir()
+  DIR <- DIR[grep(paste0("OUT_NODE_", indicator, "_"), DIR)]
+  Tables <- list()
+  products <- NULL
+
+  for (i in 1:length(DIR)) {
+    tmp <- read_delim(DIR[[i]], delim = ";", escape_double = FALSE, trim_ws = TRUE)
+    if (i > 1) {
+      products <- full_join(products, tmp[1])
+    } else {
+      products <- tmp[1]
+    }
+    Tables[[i]] <- read.csv(DIR[[i]], sep = ";", row.names = 1, header = TRUE)
+  }
+
+  ar <- array(NA,
+    dim = c(nrow(products), ncol(Tables[[1]]), length(1995:2020)),
+    dimnames = list(as.matrix(products), as.matrix(colnames(Tables[[1]])), c(1995:2020))
+  )
+  for (i in 1:length(DIR)) {
+    ar[dimnames(ar)[[1]], , i] <- as.matrix(Tables[[i]][dimnames(ar)[[1]], ])
+  }
+  ar <- ar[, paste("X", CCodes$country_code, sep = ""), ]
+  dimnames(ar)[[2]] <- CCodes$iso_3digit_alpha
+  return(ar)
+}
+
+ar_EV <- assemble_node_array("EV")
+ar_PR <- assemble_node_array("PR")
+ar_CN <- assemble_node_array("CN")
+ar_CL <- assemble_node_array("CL")
+ar_BN <- assemble_node_array("BN")
+ar_DA <- assemble_node_array("DA")
+ar_DI <- assemble_node_array("DI")
+ar_DO <- assemble_node_array("DO")
+ar_NA <- assemble_node_array("NA")
+
+save(ar_EV, ar_PR, ar_CN, ar_CL, ar_BN, ar_DA, ar_DI, ar_DO, ar_NA,
+     file = "BACINODE4D.RData")
+```
+
+## 2.3 Temporal classification of node trajectories (GNDA)
+
+```{r, warning=FALSE, message=FALSE}
+# Example: Product group 81 (base metals, tungsten) — index in array depends on
+# product ordering; adjust Coef to the row index of the product group of interest.
+Coef <- 79 # Product group 81
+
+data_da <- as.data.frame(na.omit(t(na.omit(ar_DA[Coef, , ]))))
+tdata_da <- na.omit(as.data.frame(t(data_da)))
+
+NDA_node <- ndr(data_da, cor_method = 2) # Spearman's correlation distance
+tdata_da$NDA <- NDA_node$membership
+
+for (i in 1:NDA_node$factors) {
+  matplot(t(tdata_da[tdata_da$NDA == i, -ncol(tdata_da)]),
+    type = "l", xlab = "years", ylab = "Degree centrality",
+    main = "Time-series data", xaxt = "n"
+  )
+  nn <- nrow(as.matrix(rownames(tdata_da[tdata_da$NDA == i, ])))
+  legend(0, max(tdata_da[tdata_da$NDA == i, -ncol(tdata_da)]),
+    legend = rownames(tdata_da[tdata_da$NDA == i, ]),
+    col = seq_len(nn), cex = 0.8, fill = seq_len(nn), lty = seq_len(nn)
+  )
+  axis(1, at = 1:length(1995:2020), labels = 1995:2020, cex.axis = 1.0)
+}
+
+# Cluster centroid plot
+center <- matrix(0, length(1995:2020), NDA_node$factors)
+colnames(center) <- paste("NDA_CLUST", 1:NDA_node$factors)
+for (i in 1:NDA_node$factors) {
+  center[, i] <- colMeans(tdata_da[tdata_da$NDA == i, -ncol(tdata_da)])
+}
+matplot(center, type = "l", xlab = "years", ylab = "Degree centrality",
+        main = "Time-series data", xaxt = "n", lwd = 3.0)
+legend(0, max(center), legend = colnames(center),
+       col = seq_len(NDA_node$factors), cex = 0.8,
+       fill = seq_len(NDA_node$factors), lty = seq_len(NDA_node$factors))
+axis(1, at = 1:length(1995:2020), labels = 1995:2020, cex.axis = 1.0)
+```
+
+## 2.4 Granger causality between country trajectories
+
+```{r, warning=FALSE, message=FALSE}
+compute_causality_matrix <- function(indicator_array, product_index) {
+  data <- t(indicator_array[product_index, , ])
+  N <- ncol(data)
+  CGM <- matrix(0, ncol = N, nrow = N)
+  rownames(CGM) <- colnames(data)
+  colnames(CGM) <- colnames(data)
+
+  for (i in 1:(N - 1)) {
+    for (j in (i + 1):N) {
+      p_ij <- try(grangertest(data[, i], data[, j], 1)[2, 4], silent = TRUE)
+      p_ji <- try(grangertest(data[, j], data[, i], 1)[2, 4], silent = TRUE)
+      CGM[i, j] <- ifelse(as.numeric(p_ij) < 0.001, 1, 0)
+      CGM[j, i] <- ifelse(as.numeric(p_ji) < 0.001, 1, 0)
+    }
+  }
+  return(CGM)
+}
+
+# Example: causality graph for product group at index Coef, using betweenness trajectories
+causality_graph <- compute_causality_matrix(ar_BN, Coef)
+```
+
+---
+
+# Section 3 — Visualization
+
+## 3.1 Map node-level scores to a world map
+
+```{r, warning=FALSE, message=FALSE}
+plot_node_indicator_map <- function(indicator_array, product_index, year_label) {
+  # Extract values for one product group and one year, indexed by ISO3 country code
+  values <- indicator_array[product_index, , year_label]
+  map_data_df <- data.frame(
+    iso_a3 = names(values),
+    value = as.numeric(values)
+  )
+  map_data_df$country <- countrycode(
+    sourcevar = map_data_df$iso_a3,
+    origin = "iso3c", destination = "country.name", warn = FALSE
+  )
+  map_data_df <- na.omit(map_data_df)
+
+  world_map <- map_data("world")
+  merged <- merge(world_map, map_data_df, by.x = "region", by.y = "country", all.x = TRUE)
+
+  ggplot(data = merged, aes(x = long, y = lat, group = group, fill = value)) +
+    geom_polygon(color = "white", linewidth = 0.2) +
+    scale_fill_gradient(low = "white", high = "red", na.value = "grey90") +
+    coord_map("robinson") +
+    theme_void() +
+    labs(
+      title = paste("Node-Level Indicator — Product Group", Coef, "—", year_label),
+      fill = "Value"
+    )
+}
+
+plot_node_indicator_map(ar_EV, Coef, "2020")
+```
+
+---
+
+# Session info
+
+```{r}
+sessionInfo()
+```
