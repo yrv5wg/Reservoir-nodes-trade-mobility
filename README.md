@@ -70,6 +70,12 @@ Erasmus Mobility Network 2014-2023. Figshare.
 https://doi.org/10.6084/m9.figshare.31718764
 ```
 
+**Erasmus 2008–2013 dataset:**
+```
+Kiss, D. (2026). Student Mobility, Erasmus, 2008-2013. Figshare.
+https://doi.org/10.6084/m9.figshare.32716860
+```
+
 ---
 
 ## 🏗️ Repository Structure
@@ -115,8 +121,8 @@ reservoir-nodes-trade-mobility/
 - **License:** Free for research use
 
 ### Mobility — Erasmus+ (2008–2013)
-- **Source:** Gadár et al. (2020), Scientific Data
-- **DOI:** https://doi.org/10.1038/s41597-020-0382-1
+- **Source:** Kiss, D. (2026), based on Gadár et al. (2020), Scientific Data
+- **DOI:** https://doi.org/10.6084/m9.figshare.32716860
 - **Coverage:** 1,162,429 students, 194,349 teachers, 3,591 HEIs
 - **Enriched with:** ETER, EUROSTAT, Hofstede cultural dimensions at NUTS3
 
@@ -340,6 +346,7 @@ Veszprém, Hungary
 - [Gadár et al. (2020)](https://doi.org/10.1038/s41597-020-0382-1)
 - [Kosztyán, Kiss & Obermayer (2023)](https://doi.org/10.1080/23311886.2023.2253612)
 - [Kosztyán, Kiss & Fehérvölgyi (2024)](https://doi.org/10.1016/j.jclepro.2024.142699)
+- [Erasmus+ 2008–2013 Dataset](https://doi.org/10.6084/m9.figshare.32716860)
 
 ---
 
