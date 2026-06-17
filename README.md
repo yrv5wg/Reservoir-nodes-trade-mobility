@@ -13,8 +13,7 @@ University of Pannonia, Department of Management, 2026.
 
 ## Overview
 
-This repository contains the complete analytical pipeline, data processing scripts,
-and visualization code underpinning the three research questions and theses of the dissertation.
+This repository contains the analytical pipeline underpinning the three research questions and theses of the dissertation.
 
 **RQ1** — How do temporal dynamics and causal relationships in trade network indicators vary across products, and what do these patterns reveal about the transmission and impact of shocks, crises, and technological change?
 
@@ -84,28 +83,13 @@ https://doi.org/10.6084/m9.figshare.32716860
 reservoir-nodes-trade-mobility/
 │
 ├── notebooks/
-│   ├── 01_baci_network_construction.ipynb
-│   ├── 02_temporal_clustering_gnda.ipynb
-│   ├── 03_granger_causality.ipynb
-│   ├── 04_erasmus_gravity_model.ipynb
-│   └── 05_visualization.ipynb
+│   ├── BACI_Full_Pipeline.Rmd
+│   └── Erasmus_Gravity_3Cs_FixedEffects.ipynb
 │
-├── data/
-│   ├── raw/               ← See Data Sources section
-│   └── processed/
-│       ├── BACINET3D/     ← Network-level indicators
-│       └── BACINODE4D/    ← Node-level indicators
+├── data/                  ← Not hosted here; see Data Sources section
 │
-├── figures/               ← All dissertation and presentation figures
-├── src/
-│   ├── network_indicators.R
-│   ├── gnda.R
-│   ├── granger.R
-│   └── gravity_model.R
-└── results/
-    ├── causality_graphs/
-    ├── cluster_results/
-    └── gravity_model_outputs/
+├── LICENSE
+└── README.md
 ```
 
 ---
@@ -148,52 +132,22 @@ reservoir-nodes-trade-mobility/
 
 ## 📓 Notebooks
 
-### 01 — BACI Network Construction
-**Purpose:** Build annual trade networks for each product group
+### BACI_Full_Pipeline.Rmd
+**Purpose:** Build trade networks and compute network/node-level indicators from BACI-CEPII data
 
-- Load BACI raw data
-- Construct directed weighted networks per product per year
-- Compute node-level indicators (betweenness, eigenvector, coreness)
-- Compute network-level indicators (assortativity, centralization,
-  resilience, reciprocity, asymmetry)
-- Output: BACINET3D and BACINODE4D databases
+- Network-level indicators (value-weighted and volume-weighted): assortativity, centralization, resilience, reciprocity, asymmetry
+- Node-level indicators per product group: eigenvector centrality, PageRank, coreness, betweenness, degree in/out
+- Granger causality matrix construction across product groups
+- World map visualization of trade network structure
 
-### 02 — Temporal Clustering (GNDA)
-**Purpose:** Identify temporal patterns across product groups
+### Erasmus_Gravity_3Cs_FixedEffects.ipynb
+**Purpose:** Model academic mobility flows with the 3Cs framework and test robustness via fixed effects
 
-- Apply Spearman correlation as similarity function
-- Run Generalized Network-based Dimensionality Analysis (GNDA)
-- Classify product groups into temporal clusters
-- Output: cluster assignments, factor loadings, typical patterns
-
-### 03 — Granger Causality
-**Purpose:** Identify causal relationships between product structural changes
-
-- Pairwise Granger causality tests across all product groups
-- Lag selection via AIC/BIC (optimal lag = 1 year)
-- Significance threshold: p = 0.001
-- Build directed binary causality graph
-- Apply GNDA to causality graph to detect causal communities
-- Rank products by eigenvector centrality within communities
-
-### 04 — Erasmus Gravity Model
-**Purpose:** Model academic mobility flows with 3Cs framework
-
-- Integrate ERASMUS, ETER, EUROSTAT, Hofstede databases
-- Specify time-series fixed-effect gravity model
-- Run at institutional and NUTS3 levels
-- Apply random forest regression for multicollinearity handling
-- Test cultural, crime, and collaboration variables (3Cs)
-- Output: coefficients, relative R²%, feature importances
-
-### 05 — Visualization
-**Purpose:** Reproduce all dissertation and presentation figures
-
-- Resilience time series with crisis annotations (Fig 4.4)
-- Eigenvector centrality heatmaps (Table 4.2, 4.3)
-- 3Cs relative R²% comparison (2008–2013 vs 2014–2023)
-- Rich club stability panels (Fig 4.13)
-- Contributions framework figure
+- Gravity model specification on the 2014–2023 Erasmus dataset (institutional and NUTS3 levels)
+- Random forest regression with cultural (Hofstede), crime, GDP, population, and distance features
+- Robustness check: EU membership, shared currency, and shared language as additional dyadic controls
+- Poisson pseudo-maximum-likelihood (PPML) estimation with exporter, importer, and year fixed effects, following Anderson & van Wincoop (2003)
+- Comparison of which 3Cs effects persist across both random forest and fixed-effects specifications
 
 ---
 
@@ -205,37 +159,16 @@ reservoir-nodes-trade-mobility/
 Python 3.8+
 R 4.0+
 4+ GB RAM
-~10 GB disk space (BACI full dataset)
 ```
 
 ### Installation
 
 ```bash
-# Clone repository
 git clone https://github.com/yrv5wg/reservoir-nodes-trade-mobility.git
-cd reservoir-nodes-trade-mobility
-
-# Python dependencies
-pip install -r requirements.txt
-
-# R dependencies
-Rscript install_packages.R
+cd reservoir-nodes-trade-mobility/notebooks
 ```
 
-### Run Pipeline
-
-```bash
-# Run notebooks sequentially
-jupyter notebook
-# Open and run: 01 → 02 → 03 → 04 → 05
-```
-
-**Estimated runtime:**
-- Notebook 01: ~2 hours (full BACI, 26 years × 97 product groups)
-- Notebook 02: ~30 min
-- Notebook 03: ~1 hour (pairwise causality, ~9,000 pairs)
-- Notebook 04: ~45 min
-- Notebook 05: ~10 min
+BACI and Erasmus source data are not bundled in this repository — see the Data Sources section above for download links and DOIs. Place downloaded data locally and update the file paths at the top of each notebook before running.
 
 ---
 
@@ -276,6 +209,9 @@ jupyter notebook
 | Long-term orientation | Hofstede | NUTS1 |
 | Indulgence | Hofstede | NUTS1 |
 | Distance | Calculated | Pair |
+| EU membership (both/one) | CEPII / own coding | Pair |
+| Shared currency (Eurozone) | CEPII / own coding | Pair |
+| Shared official language | Own coding | Pair |
 
 ---
 
@@ -301,6 +237,7 @@ regional, and national levels — cultural effects are structural, not context-s
 - Indulgence and long-term orientation are strongest pull factors
 - Masculinity and uncertainty avoidance are strongest push constraints
 - Cultural variable importance persists across 2008–2013 and 2014–2023
+- EU membership, shared currency, and shared language add no independent explanatory power once gravity fundamentals and country/year fixed effects are accounted for, confirming that cultural and institutional factors — not formal political or monetary integration — drive the result
 
 ### Thesis 3 — Structural Parallelism
 Global trade and academic mobility networks share fundamentally similar
@@ -343,25 +280,23 @@ Veszprém, Hungary
 - [Eurostat](https://ec.europa.eu/eurostat)
 - [ETER Project](https://www.eter-project.com/)
 - [Erasmus+ 2014–2023 Dataset](https://doi.org/10.6084/m9.figshare.31718764)
+- [Erasmus+ 2008–2013 Dataset](https://doi.org/10.6084/m9.figshare.32716860)
 - [Gadár et al. (2020)](https://doi.org/10.1038/s41597-020-0382-1)
 - [Kosztyán, Kiss & Obermayer (2023)](https://doi.org/10.1080/23311886.2023.2253612)
 - [Kosztyán, Kiss & Fehérvölgyi (2024)](https://doi.org/10.1016/j.jclepro.2024.142699)
-- [Erasmus+ 2008–2013 Dataset](https://doi.org/10.6084/m9.figshare.32716860)
+- [Anderson & van Wincoop (2003)](https://doi.org/10.1257/000282803321455214)
 
 ---
 
 ## 📅 Version History
 
 **v1.0.0 (2026)** — Initial Release
-- Full BACI network indicator pipeline
-- Granger causality analysis across 97 product groups
+- BACI network indicator pipeline
 - Erasmus gravity model with 3Cs framework
-- Complete visualization scripts
-- Dissertation figures reproduced
+- Fixed-effects robustness check (EU membership, currency, language)
 
 ---
 
 *Repository Status:*
 📝 Dissertation submitted — University of Pannonia, 2026
 🔄 Code actively maintained
-⭐ Star this repo to track updates
