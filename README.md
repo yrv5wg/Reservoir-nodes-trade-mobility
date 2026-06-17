@@ -323,7 +323,7 @@ Veszprém, Hungary
 📧 kiss.denes@gtk.uni-pannon.hu
 
 **Zsolt Tibor Kosztyán**
-Associate Professor
+Professor
 University of Pannonia, Faculty of Business and Economics
 Veszprém, Hungary
 📧 kosztyan.zsolt@gtk.uni-pannon.hu
